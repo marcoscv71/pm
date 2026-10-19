@@ -1,0 +1,14 @@
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+.gitignore
+frontend/node_modules
+frontend/.next
+frontend/out
+**/node_modules
+**/.next
+**/__pycache__
+**/.pytest_cache
+**/.venv

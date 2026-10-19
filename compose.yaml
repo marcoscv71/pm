@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_PATH: /data/pm.db
+    volumes:
+      - pm-data:/data
+
+volumes:
+  pm-data:

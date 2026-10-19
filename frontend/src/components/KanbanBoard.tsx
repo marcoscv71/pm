@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -8,16 +8,64 @@ import {
   useSensor,
   useSensors,
   closestCorners,
+  pointerWithin,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
-import { createId, initialData, moveCard, type BoardData } from "@/lib/kanban";
+import { createId, moveCard, type BoardData } from "@/lib/kanban";
+import { fetchBoard, saveBoard } from "@/lib/boardApi";
 
-export const KanbanBoard = () => {
-  const [board, setBoard] = useState<BoardData>(() => initialData);
+const collisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0
+    ? pointerCollisions
+    : closestCorners(args);
+};
+
+type KanbanBoardProps = {
+  onLogout: () => void;
+};
+
+export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
+  const [board, setBoard] = useState<BoardData | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const boardRef = useRef<BoardData | null>(null);
+  const persistedBoardRef = useRef<BoardData | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveRevisionRef = useRef(0);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    fetchBoard()
+      .then((loadedBoard) => {
+        if (isCurrent) {
+          boardRef.current = loadedBoard;
+          persistedBoardRef.current = loadedBoard;
+          setBoard(loadedBoard);
+        }
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Ocorreu um erro inesperado."
+          );
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [loadAttempt]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -25,7 +73,39 @@ export const KanbanBoard = () => {
     })
   );
 
-  const cardsById = useMemo(() => board.cards, [board.cards]);
+  const cardsById = useMemo(() => board?.cards ?? {}, [board?.cards]);
+
+  const updateBoard = (nextBoard: BoardData) => {
+    boardRef.current = nextBoard;
+    setBoard(nextBoard);
+    setSaveError(null);
+    setSaveStatus("saving");
+
+    const revision = ++saveRevisionRef.current;
+    saveQueueRef.current = saveQueueRef.current.then(async () => {
+      try {
+        const savedBoard = await saveBoard(nextBoard);
+        persistedBoardRef.current = savedBoard;
+        if (revision === saveRevisionRef.current) {
+          boardRef.current = savedBoard;
+          setBoard(savedBoard);
+          setSaveStatus("saved");
+        }
+      } catch (error: unknown) {
+        if (revision === saveRevisionRef.current) {
+          const persistedBoard = persistedBoardRef.current;
+          boardRef.current = persistedBoard;
+          setBoard(persistedBoard);
+          setSaveError(
+            error instanceof Error
+              ? error.message
+              : "Ocorreu um erro inesperado."
+          );
+          setSaveStatus("idle");
+        }
+      }
+    });
+  };
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveCardId(event.active.id as string);
@@ -39,55 +119,104 @@ export const KanbanBoard = () => {
       return;
     }
 
-    setBoard((prev) => ({
-      ...prev,
-      columns: moveCard(prev.columns, active.id as string, over.id as string),
-    }));
+    const currentBoard = boardRef.current;
+    if (!currentBoard) {
+      return;
+    }
+    updateBoard({
+      ...currentBoard,
+      columns: moveCard(
+        currentBoard.columns,
+        active.id as string,
+        over.id as string
+      ),
+    });
   };
 
   const handleRenameColumn = (columnId: string, title: string) => {
-    setBoard((prev) => ({
-      ...prev,
-      columns: prev.columns.map((column) =>
+    const currentBoard = boardRef.current;
+    if (!currentBoard) {
+      return;
+    }
+    updateBoard({
+      ...currentBoard,
+      columns: currentBoard.columns.map((column) =>
         column.id === columnId ? { ...column, title } : column
       ),
-    }));
+    });
   };
 
   const handleAddCard = (columnId: string, title: string, details: string) => {
+    const currentBoard = boardRef.current;
+    if (!currentBoard) {
+      return;
+    }
     const id = createId("card");
-    setBoard((prev) => ({
-      ...prev,
+    updateBoard({
+      ...currentBoard,
       cards: {
-        ...prev.cards,
+        ...currentBoard.cards,
         [id]: { id, title, details: details || "No details yet." },
       },
-      columns: prev.columns.map((column) =>
+      columns: currentBoard.columns.map((column) =>
         column.id === columnId
           ? { ...column, cardIds: [...column.cardIds, id] }
           : column
       ),
-    }));
+    });
   };
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
-    setBoard((prev) => {
-      return {
-        ...prev,
-        cards: Object.fromEntries(
-          Object.entries(prev.cards).filter(([id]) => id !== cardId)
-        ),
-        columns: prev.columns.map((column) =>
-          column.id === columnId
-            ? {
-                ...column,
-                cardIds: column.cardIds.filter((id) => id !== cardId),
-              }
-            : column
-        ),
-      };
+    const currentBoard = boardRef.current;
+    if (!currentBoard) {
+      return;
+    }
+    updateBoard({
+      ...currentBoard,
+      cards: Object.fromEntries(
+        Object.entries(currentBoard.cards).filter(([id]) => id !== cardId)
+      ),
+      columns: currentBoard.columns.map((column) =>
+        column.id === columnId
+          ? {
+              ...column,
+              cardIds: column.cardIds.filter((id) => id !== cardId),
+            }
+          : column
+      ),
     });
   };
+
+  if (loadError) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        <p role="alert" className="text-sm font-medium text-red-700">
+          Não foi possível carregar o quadro. {loadError}
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoadError(null);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+          className="rounded-full bg-[var(--secondary-purple)] px-5 py-3 text-sm font-semibold text-white"
+        >
+          Tentar novamente
+        </button>
+      </main>
+    );
+  }
+
+  if (!board) {
+    return (
+      <main
+        role="status"
+        className="flex min-h-screen items-center justify-center text-sm text-[var(--gray-text)]"
+      >
+        Carregando seu quadro...
+      </main>
+    );
+  }
 
   const activeCard = activeCardId ? cardsById[activeCardId] : null;
 
@@ -101,23 +230,32 @@ export const KanbanBoard = () => {
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--gray-text)]">
-                Single Board Kanban
+                Quadro Kanban único
               </p>
               <h1 className="mt-3 font-display text-4xl font-semibold text-[var(--navy-dark)]">
                 Kanban Studio
               </h1>
               <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--gray-text)]">
-                Keep momentum visible. Rename columns, drag cards between stages,
-                and capture quick notes without getting buried in settings.
+                Acompanhe o andamento do trabalho. Renomeie colunas, arraste cartões entre etapas
+                e registre observações sem se perder em configurações.
               </p>
             </div>
-            <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
-                Focus
-              </p>
-              <p className="mt-2 text-lg font-semibold text-[var(--primary-blue)]">
-                One board. Five columns. Zero clutter.
-              </p>
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
+                  Foco
+                </p>
+                <p className="mt-2 text-lg font-semibold text-[var(--primary-blue)]">
+                  Um quadro. Cinco colunas. Sem complicação.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="rounded-full border border-[var(--stroke)] px-4 py-2 text-sm font-semibold text-[var(--navy-dark)] transition hover:border-[var(--primary-blue)]"
+              >
+                Sair
+              </button>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-4">
@@ -131,11 +269,27 @@ export const KanbanBoard = () => {
               </div>
             ))}
           </div>
+          <div aria-live="polite">
+            {saveError ? (
+              <p role="alert" className="text-sm font-medium text-red-700">
+                Não foi possível salvar as alterações. Elas foram desfeitas.{" "}
+                {saveError}
+              </p>
+            ) : saveStatus === "saving" ? (
+              <p role="status" className="text-sm text-[var(--gray-text)]">
+                Salvando alterações...
+              </p>
+            ) : saveStatus === "saved" ? (
+              <p role="status" className="text-sm text-[var(--primary-blue)]">
+                Alterações salvas.
+              </p>
+            ) : null}
+          </div>
         </header>
 
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
+          collisionDetection={collisionDetection}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
