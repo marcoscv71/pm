@@ -39,7 +39,7 @@ A suspeita inicial de que o `httpx2` não era usado estava errada. O `starlette.
 
 Digitar "Pendências" gera 10 gravações do quadro inteiro. Se uma delas falhar, o título volta para o último estado salvo enquanto o usuário ainda digita. Também é possível salvar um título vazio.
 
-**Ação:** manter o título em estado local no `KanbanColumn` e persistir no `onBlur`/Enter, ignorando valores vazios ou sem alteração. Ajustar os testes de renomeação.
+**Resolvido:** o `KanbanColumn` mantém o título em edição em estado local e salva uma única vez ao sair do campo ou apertar Enter, ignorando títulos vazios ou sem alteração.
 
 ### 4. A API fica exposta na rede local sem autenticação
 
@@ -116,6 +116,6 @@ Na mesma aba, o `inert` evita o problema, mas uma segunda aba ou um `PUT` direto
 
 1. Item 1 (concluído) e item 2.
 2. Itens 4, 5 e 6 (concluídos).
-3. Item 3, com ajuste dos testes unitários e E2E de renomeação.
+3. Item 3 (concluído).
 4. Decidir os itens 7 e 8 com o usuário.
 5. Item 9 e a limpeza de prioridade baixa, um commit por grupo.
