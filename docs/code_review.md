@@ -47,7 +47,7 @@ Digitar "Pendências" gera 10 gravações do quadro inteiro. Se uma delas falhar
 
 Como o login é apenas no cliente, qualquer máquina da rede pode ler ou sobrescrever o quadro e consumir a chave do OpenRouter por `/api/ai/chat` e `/api/ai/check`.
 
-**Ação:** usar `"127.0.0.1:8000:8000"`, já que o MVP roda localmente.
+**Resolvido:** a porta agora é publicada como `"127.0.0.1:8000:8000"`.
 
 ## Prioridade média
 
@@ -55,13 +55,13 @@ Como o login é apenas no cliente, qualquer máquina da rede pode ler ou sobresc
 
 - `frontend/src/components/KanbanBoard.tsx:165`: `details || "No details yet."` grava texto em inglês no quadro.
 
-**Ação:** remover o valor padrão e salvar `details` vazio (o backend aceita `""`), ou traduzir o texto. Ajustar a exibição se necessário.
+**Resolvido:** o valor padrão foi removido; cartões sem detalhes são salvos com `details` vazio.
 
 ### 6. Erros de tipagem nos testes do frontend
 
 - `frontend/src/test/vitest.d.ts:1`: `/// <reference types="vitest" />` não declara os globais (`describe`, `it`, `expect`). Isso gera 86 erros no `tsc`; o editor também acusa esses erros.
 
-**Ação:** trocar para `/// <reference types="vitest/globals" />` (ou `"types": ["vitest/globals"]` no `tsconfig.json`) e confirmar que `npx tsc --noEmit` fica limpo. Considerar adicionar `"typecheck": "tsc --noEmit"` ao `package.json`.
+**Resolvido:** a referência passou a ser `vitest/globals`; `npx tsc --noEmit` não acusa mais erros.
 
 ### 7. Escrita perdida quando o quadro muda durante a chamada da IA
 
@@ -115,7 +115,7 @@ Na mesma aba, o `inert` evita o problema, mas uma segunda aba ou um `PUT` direto
 ## Ordem sugerida de execução
 
 1. Item 1 (concluído) e item 2.
-2. Itens 4, 5 e 6: mudanças de uma linha cada.
+2. Itens 4, 5 e 6 (concluídos).
 3. Item 3, com ajuste dos testes unitários e E2E de renomeação.
 4. Decidir os itens 7 e 8 com o usuário.
 5. Item 9 e a limpeza de prioridade baixa, um commit por grupo.
