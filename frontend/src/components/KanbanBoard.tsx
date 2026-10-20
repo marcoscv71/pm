@@ -162,7 +162,7 @@ export const KanbanBoard = ({ onLogout }: KanbanBoardProps) => {
       ...currentBoard,
       cards: {
         ...currentBoard.cards,
-        [id]: { id, title, details: details || "No details yet." },
+        [id]: { id, title, details },
       },
       columns: currentBoard.columns.map((column) =>
         column.id === columnId
