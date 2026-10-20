@@ -1,10 +1,33 @@
 import { expect, test } from "@playwright/test";
+import type { AIChatResponse } from "../src/lib/aiChatApi";
 import { initialData, type BoardData } from "../src/lib/kanban";
 
 const installBoardApi = async (page: import("@playwright/test").Page) => {
   let board: BoardData = structuredClone(initialData);
   let failLoads = false;
   let failNextSave = false;
+  let failChat = false;
+  let chatResponse: AIChatResponse = {
+    reply: "Tudo certo.",
+    operations: [],
+    board: null,
+  };
+  const chatRequests: unknown[] = [];
+
+  await page.route("**/api/ai/chat", async (route) => {
+    chatRequests.push(route.request().postDataJSON());
+    if (failChat) {
+      await route.fulfill({
+        status: 502,
+        json: { detail: "OpenRouter indisponível." },
+      });
+      return;
+    }
+    if (chatResponse.board) {
+      board = structuredClone(chatResponse.board);
+    }
+    await route.fulfill({ json: chatResponse });
+  });
 
   await page.route("**/api/board", async (route) => {
     if (route.request().method() === "GET") {
@@ -36,6 +59,13 @@ const installBoardApi = async (page: import("@playwright/test").Page) => {
     failSave: () => {
       failNextSave = true;
     },
+    setChatResponse: (response: AIChatResponse) => {
+      chatResponse = response;
+    },
+    failChat: () => {
+      failChat = true;
+    },
+    getChatRequests: () => structuredClone(chatRequests),
     getBoard: () => structuredClone(board),
   };
 };
@@ -227,4 +257,85 @@ test("reports save failures and reverts the unsaved change", async ({ page }) =>
 
   await expect(title).toHaveValue("Pendências");
   expect(api.getBoard().columns[0].title).toBe("Pendências");
+});
+
+test("sends chat history and applies the AI board update without reloading", async ({
+  page,
+}) => {
+  const api = await installBoardApi(page);
+  const updatedBoard = structuredClone(initialData);
+  updatedBoard.cards["card-1"].title = "Planejar o roteiro";
+  api.setChatResponse({
+    reply: "Atualizei o título do cartão.",
+    operations: [
+      { type: "edit_card", card_id: "card-1", title: "Planejar o roteiro" },
+    ],
+    board: updatedBoard,
+  });
+
+  await page.goto("/");
+  await login(page);
+  await page.getByLabel("Sua mensagem").fill("Renomeie o cartão do roteiro.");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+
+  await expect(page.getByText("Atualizei o título do cartão.")).toBeVisible();
+  await expect(page.getByText("O quadro foi atualizado.")).toBeVisible();
+  await expect(page.getByTestId("card-card-1")).toContainText(
+    "Planejar o roteiro"
+  );
+  expect(api.getChatRequests()).toEqual([
+    { message: "Renomeie o cartão do roteiro.", history: [] },
+  ]);
+  expect(api.getBoard().cards["card-1"].title).toBe("Planejar o roteiro");
+
+  await page.getByLabel("Sua mensagem").fill("O que você alterou?");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+  await expect(page.getByText("Atualizei o título do cartão.")).toHaveCount(2);
+  expect(api.getChatRequests()[1]).toEqual({
+    message: "O que você alterou?",
+    history: [
+      { role: "user", content: "Renomeie o cartão do roteiro." },
+      { role: "assistant", content: "Atualizei o título do cartão." },
+    ],
+  });
+
+  await page.reload();
+  await expect(page.getByTestId("card-card-1")).toContainText(
+    "Planejar o roteiro"
+  );
+});
+
+test("shows an AI response without board changes", async ({ page }) => {
+  const api = await installBoardApi(page);
+  api.setChatResponse({
+    reply: "O quadro está em ordem.",
+    operations: [],
+    board: null,
+  });
+  await page.goto("/");
+  await login(page);
+
+  await page.getByLabel("Sua mensagem").fill("Resuma o quadro.");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+
+  await expect(page.getByText("O quadro está em ordem.")).toBeVisible();
+  await expect(page.getByText("O quadro foi atualizado.")).toHaveCount(0);
+  expect(api.getBoard()).toEqual(initialData);
+});
+
+test("reports AI request errors and preserves the draft", async ({ page }) => {
+  const api = await installBoardApi(page);
+  api.failChat();
+  await page.goto("/");
+  await login(page);
+
+  const message = page.getByLabel("Sua mensagem");
+  await message.fill("Ajude-me a organizar o quadro.");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+
+  await expect(page.locator("aside").getByRole("alert")).toContainText(
+    "OpenRouter indisponível."
+  );
+  await expect(message).toHaveValue("Ajude-me a organizar o quadro.");
+  expect(api.getBoard()).toEqual(initialData);
 });

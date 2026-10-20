@@ -17,6 +17,15 @@ describe("KanbanBoard", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(_input) === "/api/ai/chat") {
+          return Promise.resolve(
+            jsonResponse({
+              reply: "Tudo certo.",
+              operations: [],
+              board: null,
+            })
+          );
+        }
         const board =
           init?.method === "PUT"
             ? JSON.parse(String(init.body))
@@ -121,5 +130,129 @@ describe("KanbanBoard", () => {
       await screen.findByText(/Não foi possível salvar as alterações/)
     ).toBeInTheDocument();
     expect(title).toHaveValue("Pendências");
+  });
+
+  it("shows the AI loading state and applies its persisted board update", async () => {
+    let resolveChat: ((response: Response) => void) | undefined;
+    const updatedBoard = structuredClone(initialData);
+    updatedBoard.cards["card-1"].title = "Planejar o roteiro";
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (String(input) === "/api/ai/chat") {
+        return new Promise((resolve) => {
+          resolveChat = resolve;
+        });
+      }
+      const nextBoard =
+        init?.method === "PUT"
+          ? JSON.parse(String(init.body))
+          : initialData;
+      return Promise.resolve(jsonResponse(nextBoard));
+    });
+
+    render(<KanbanBoard onLogout={onLogout} />);
+    await screen.findAllByTestId(/column-/i);
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Sua mensagem"),
+      "Atualize o cartão do roteiro."
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(
+      screen.getByText("A IA está preparando uma resposta...")
+    ).toHaveAttribute("role", "status");
+    expect(
+      screen.getByTestId("column-col-backlog").closest("[inert]")
+    ).not.toBeNull();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/ai/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          message: "Atualize o cartão do roteiro.",
+          history: [],
+        }),
+      })
+    );
+
+    resolveChat?.(
+      jsonResponse({
+        reply: "Atualizei o título do cartão.",
+        operations: [
+          { type: "edit_card", card_id: "card-1", title: "Planejar o roteiro" },
+        ],
+        board: updatedBoard,
+      })
+    );
+
+    expect(
+      await screen.findByText("Atualizei o título do cartão.")
+    ).toBeInTheDocument();
+    expect(screen.getByText("O quadro foi atualizado.")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("card-card-1")).getByText(
+        "Planejar o roteiro"
+      )
+    ).toBeInTheDocument();
+    expect(
+      vi.mocked(fetch).mock.calls.filter(
+        ([input, init]) => String(input) === "/api/board" && init?.method === "PUT"
+      )
+    ).toHaveLength(0);
+  });
+
+  it("shows the assistant reply when it does not update the board", async () => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input) === "/api/ai/chat") {
+        return jsonResponse({
+          reply: "O quadro está em ordem.",
+          operations: [],
+          board: null,
+        });
+      }
+      const nextBoard =
+        init?.method === "PUT"
+          ? JSON.parse(String(init.body))
+          : initialData;
+      return jsonResponse(nextBoard);
+    });
+    render(<KanbanBoard onLogout={onLogout} />);
+    await screen.findAllByTestId(/column-/i);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Sua mensagem"), "Resuma o quadro.");
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(await screen.findByText("O quadro está em ordem.")).toBeInTheDocument();
+    expect(screen.queryByText("O quadro foi atualizado.")).not.toBeInTheDocument();
+  });
+
+  it("reports chat failures and keeps the message available for retry", async () => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input) === "/api/ai/chat") {
+        return new Response(
+          JSON.stringify({ detail: "OpenRouter indisponível." }),
+          { status: 502, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const nextBoard =
+        init?.method === "PUT"
+          ? JSON.parse(String(init.body))
+          : initialData;
+      return jsonResponse(nextBoard);
+    });
+    render(<KanbanBoard onLogout={onLogout} />);
+    await screen.findAllByTestId(/column-/i);
+    const user = userEvent.setup();
+    const input = screen.getByLabelText("Sua mensagem");
+    await user.type(input, "Ajude-me com o quadro.");
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "OpenRouter indisponível."
+    );
+    expect(input).toHaveValue("Ajude-me com o quadro.");
+    expect(screen.getByTestId("card-card-1")).toHaveTextContent(
+      "Alinhar temas do roteiro"
+    );
   });
 });

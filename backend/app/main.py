@@ -6,8 +6,10 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
+from app.ai_chat import AIChatRequest, AIChatResponse, run_ai_chat
 from app.board import BoardData
 from app.database import MVP_USER_ID, initialize_database, read_board, write_board
+from app.openrouter import run_connection_check
 
 
 @asynccontextmanager
@@ -44,6 +46,25 @@ def create_app(
     @application.get("/api/hello")
     def hello() -> dict[str, str]:
         return {"message": "Hello, world!"}
+
+    @application.post("/api/ai/check")
+    def check_openrouter() -> dict[str, str]:
+        return run_connection_check()
+
+    @application.post("/api/ai/chat", response_model=AIChatResponse)
+    def chat_with_openrouter(request: AIChatRequest) -> AIChatResponse:
+        board = read_board(application.state.database_path, MVP_USER_ID)
+        if board is None:
+            raise HTTPException(status_code=404, detail="Board not found.")
+
+        response = run_ai_chat(board, request)
+        if response.board is not None and not write_board(
+            application.state.database_path,
+            MVP_USER_ID,
+            response.board,
+        ):
+            raise HTTPException(status_code=404, detail="Board not found.")
+        return response
 
     resolved_static_dir = static_dir or Path(
         os.environ.get(

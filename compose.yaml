@@ -6,6 +6,9 @@ services:
       - "8000:8000"
     environment:
       DATABASE_PATH: /data/pm.db
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - pm-data:/data
 

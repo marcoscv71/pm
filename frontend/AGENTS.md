@@ -2,7 +2,7 @@
 
 ## Contexto
 
-Este diretório contém uma aplicação Kanban feita com Next.js, React e TypeScript. O login continua simulado no cliente; o quadro autenticado é carregado e salvo pela API FastAPI, sem autenticação segura ou chat com IA.
+Este diretório contém uma aplicação Kanban feita com Next.js, React e TypeScript. O login continua simulado no cliente; o quadro autenticado é carregado e salvo pela API FastAPI, sem autenticação segura.
 
 ## Estrutura existente
 
@@ -11,12 +11,13 @@ Este diretório contém uma aplicação Kanban feita com Next.js, React e TypeSc
 - `src/app/globals.css` define as cores, superfícies e estilos globais. As cores do produto são amarelo `#ecad0a`, azul `#209dd7`, roxo `#753991`, azul-marinho `#032147` e cinza `#888888`.
 - `src/components/KanbanBoard.tsx` carrega o quadro da API e coordena arrastar e soltar, renomear colunas, criar/remover cartões e a sobreposição do cartão arrastado; alterações são persistidas pela API.
 - `src/components/AuthenticatedApp.tsx` controla a sessão simulada no `localStorage`, e `LoginScreen.tsx` apresenta o formulário de entrada. As credenciais fixas são `user` e `password`; isso não oferece proteção de segurança. Ao entrar, o quadro é obtido via `/api/board`.
+- `src/components/AIChatPanel.tsx` apresenta a barra lateral responsiva do chat; `src/lib/aiChatApi.ts` envia a mensagem e o histórico para `/api/ai/chat`.
 - `src/components/KanbanColumn.tsx`, `KanbanCard.tsx`, `KanbanCardPreview.tsx` e `NewCardForm.tsx` compõem as colunas, cartões, prévia de arraste e formulário de criação.
 - `src/lib/kanban.ts` define os tipos `Card`, `Column` e `BoardData`, os dados de demonstração e as funções utilitárias do quadro, incluindo `moveCard` e `createId`.
 - `src/lib/boardApi.ts` encapsula as requisições de leitura e atualização para `/api/board`.
 - Os testes unitários ficam junto às funcionalidades em `src/components/` e `src/lib/`; `src/test/setup.ts` configura o ambiente de teste.
 - `tests/kanban.spec.ts` contém testes end-to-end com Playwright.
-- Os testes E2E interceptam `/api/board` e mantêm estado de API controlado, incluindo cenários de falha de leitura/gravação; não dependem de serviços externos.
+- Os testes E2E interceptam `/api/board` e `/api/ai/chat` e mantêm estado de API controlado, incluindo cenários de falha de leitura/gravação e respostas do chat; não dependem de serviços externos.
 - `AuthenticatedApp.test.tsx` testa o login simulado e a restauração/remoção de sessão.
 - `src/test/setup.ts` configura o `localStorage` de teste para jsdom quando o runtime não o fornece.
 
@@ -39,4 +40,4 @@ O build de produção exporta os arquivos estáticos para `out/`; o Docker os in
 - Atualize os testes de interface quando os textos acessíveis mudarem, sem remover a cobertura de comportamento.
 - O login nesta etapa é somente uma simulação no cliente. Não o apresente como autenticação segura nem confunda o estado salvo no `localStorage` com uma sessão protegida no backend.
 - O backend associa `/api/board` ao usuário fixo `user` no MVP; a API não recebe identidade de usuário do navegador.
-- Execute os testes e verificações relevantes para as alterações. O chat com IA ainda não está implementado.
+- Execute os testes e verificações relevantes para as alterações. O backend já persiste as atualizações válidas do chat; aplique o quadro retornado diretamente na interface, sem enviar uma gravação duplicada para `/api/board`.

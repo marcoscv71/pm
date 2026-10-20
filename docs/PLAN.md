@@ -19,7 +19,7 @@ As credenciais do MVP são `user` e `password`. A estrutura de dados deve permit
 
 ## Sequência e pontos de aprovação
 
-As etapas abaixo são sequenciais quando uma etapa depende de artefatos ou comportamento da anterior. A abordagem de banco de dados precisa de aprovação antes da implementação da persistência. O contrato detalhado das atualizações estruturadas da IA continua pendente: será discutido com o usuário antes da implementação da Parte 9, sem assumir agora nomes de campos, operações ou formato.
+As etapas abaixo são sequenciais quando uma etapa depende de artefatos ou comportamento da anterior. A abordagem de banco de dados precisa de aprovação antes da implementação da persistência. O contrato da saída estruturada da IA foi aprovado pelo usuário para a Parte 9 e está registrado nessa seção.
 
 ## Parte 1: Planejamento e preparação do frontend
 
@@ -198,52 +198,60 @@ As etapas abaixo são sequenciais quando uma etapa depende de artefatos ou compo
 
 ### Checklist
 
-- [ ] Ler `OPENROUTER_API_KEY` da configuração de ambiente no backend, sem enviá-la ao frontend ou registrá-la em logs.
-- [ ] Usar o modelo `openai/gpt-oss-120b`.
-- [ ] Implementar uma chamada simples de verificação ao modelo, separada da funcionalidade final de chat.
-- [ ] Tratar erros de configuração, rede e resposta do provedor de forma explícita.
-- [ ] Manter testes automatizados comuns independentes de acesso à rede e de uma chave real.
+- [x] Ler `OPENROUTER_API_KEY` da configuração de ambiente no backend, sem enviá-la ao frontend ou registrá-la em logs.
+- [x] Usar o modelo `openai/gpt-oss-120b`.
+- [x] Implementar uma chamada simples de verificação ao modelo, separada da funcionalidade final de chat.
+- [x] Tratar erros de configuração, rede e resposta do provedor de forma explícita.
+- [x] Manter testes automatizados comuns independentes de acesso à rede e de uma chave real.
 
 ### Testes e verificações
 
-- Testar a montagem da requisição e o tratamento de respostas/erros com chamadas externas simuladas.
-- Executar, quando houver chave configurada e conectividade, um teste manual ou opt-in que envia “2+2” e verifica uma resposta equivalente a “4”.
-- Verificar que a chave não aparece na resposta, no bundle, nos logs nem na imagem final.
+- [x] Testar a montagem da requisição e o tratamento de respostas/erros com chamadas externas simuladas.
+- [ ] Executar, quando houver chave configurada e conectividade, um teste manual ou opt-in que envia “2+2” e verifica uma resposta equivalente a “4”. Não executado neste ambiente para não transmitir a credencial a um serviço externo.
+- [x] Verificar que a chave não aparece na resposta, no bundle, nos logs nem na imagem final.
 
 ### Critérios de conclusão
 
-- O backend usa o modelo e a configuração especificados e processa uma resposta real de verificação quando o teste externo é executado.
-- A suíte automatizada continua executável sem chave ou conexão com OpenRouter.
+- [x] O backend usa o modelo e a configuração especificados e processa uma resposta de verificação; a chamada real opt-in permanece pendente.
+- [x] A suíte automatizada continua executável sem chave ou conexão com OpenRouter.
 
 ## Parte 9: Chamada de IA com contexto do quadro e saída estruturada
 
 **Objetivo:** enviar à IA a pergunta, o histórico e o quadro atual, e interpretar a resposta estruturada para exibir uma resposta ao usuário e, opcionalmente, atualizar o quadro.
 
-### Decisão pendente
+### Contrato aprovado
 
-O formato exato da atualização do Kanban — incluindo campos e operações permitidas — será definido com o usuário antes desta parte. Não assumir nem implementar o contrato antes dessa decisão. Após aprovação, registrar o contrato em documentação apropriada e usá-lo de forma consistente no backend, frontend e testes.
+Contrato aprovado: a IA retorna um objeto JSON com `reply` (resposta não vazia em linguagem natural) e `operations` (lista de operações tipadas; lista vazia significa nenhuma alteração). IDs de cartões/colunas existentes devem corresponder exatamente aos IDs do quadro. A aplicação gera os IDs de novos cartões. Operações permitidas:
+
+- `create_card`: `column_id`, `title`, `details`.
+- `edit_card`: `card_id` e pelo menos um dos campos `title` ou `details`.
+- `move_card`: `card_id`, `column_id`.
+- `rename_column`: `column_id`, `title`.
+- `delete_card`: `card_id`.
+
+Operações são aplicadas em ordem sobre uma cópia do quadro. Se qualquer operação for inválida, nenhuma alteração é persistida. O endpoint recebe a mensagem atual e um histórico limitado a 20 mensagens de usuário/assistente; o quadro atual é obtido pelo backend, nunca aceito do cliente.
 
 ### Checklist
 
-- [ ] Definir e aprovar com o usuário o formato da saída estruturada e as operações de quadro permitidas.
-- [ ] Enviar à IA o quadro JSON do usuário, a pergunta atual e o histórico de conversa pertinente.
-- [ ] Solicitar e validar uma saída estruturada conforme o contrato aprovado.
-- [ ] Retornar ao cliente a resposta em linguagem natural e, se aplicável, a atualização validada.
-- [ ] Persistir atualizações somente depois de validar e aplicar a saída ao quadro do usuário correto.
-- [ ] Tratar saída incompleta ou inválida e erros do provedor sem aplicar alterações parciais ou apresentar sucesso falso.
+- [x] Definir e aprovar com o usuário o formato da saída estruturada e as operações de quadro permitidas.
+- [x] Enviar à IA o quadro JSON do usuário, a pergunta atual e o histórico de conversa pertinente.
+- [x] Solicitar e validar uma saída estruturada conforme o contrato aprovado.
+- [x] Retornar ao cliente a resposta em linguagem natural e, se aplicável, a atualização validada.
+- [x] Persistir atualizações somente depois de validar e aplicar a saída ao quadro do usuário correto.
+- [x] Tratar saída incompleta ou inválida e erros do provedor sem aplicar alterações parciais ou apresentar sucesso falso.
 
 ### Testes e verificações
 
-- Testar montagem do contexto, inclusão do histórico e saída estruturada com respostas do provedor simuladas.
-- Testar resposta sem atualização, atualização válida e saída inválida conforme o contrato aprovado.
-- Confirmar que alterações persistidas continuam associadas ao usuário correto e não corrompem o quadro.
-- Confirmar que falhas do provedor não alteram os dados persistidos.
-- Manter os testes automatizados sem dependência de rede ou chave real.
+- [x] Testar montagem do contexto, inclusão do histórico e saída estruturada com respostas do provedor simuladas.
+- [x] Testar resposta sem atualização, atualização válida e saída inválida conforme o contrato aprovado.
+- [x] Confirmar que alterações persistidas continuam associadas ao usuário correto e não corrompem o quadro.
+- [x] Confirmar que falhas do provedor não alteram os dados persistidos.
+- [x] Manter os testes automatizados sem dependência de rede ou chave real.
 
 ### Critérios de conclusão
 
-- A chamada inclui o quadro, pergunta e histórico; a resposta e as atualizações opcionais seguem o contrato aprovado.
-- Saídas inválidas ou falhas não são aplicadas nem comunicadas como sucesso.
+- [x] A chamada inclui o quadro, pergunta e histórico; a resposta e as atualizações opcionais seguem o contrato aprovado.
+- [x] Saídas inválidas ou falhas não são aplicadas nem comunicadas como sucesso.
 
 ## Parte 10: Interface do chat com IA
 
@@ -251,22 +259,22 @@ O formato exato da atualização do Kanban — incluindo campos e operações pe
 
 ### Checklist
 
-- [ ] Adicionar à interface um widget lateral de chat que se adapte ao layout existente.
-- [ ] Permitir envio de mensagens e apresentar o histórico relevante da conversa.
-- [ ] Exibir estados de envio/carregamento e comunicar falhas de forma clara.
-- [ ] Enviar mensagens ao backend e renderizar a resposta do assistente.
-- [ ] Aplicar na interface a atualização do quadro retornada pelo backend, sem exigir recarga manual.
-- [ ] Preservar o fluxo normal de edição do quadro e o estado de login/logout.
+- [x] Adicionar à interface um widget lateral de chat que se adapte ao layout existente.
+- [x] Permitir envio de mensagens e apresentar o histórico relevante da conversa.
+- [x] Exibir estados de envio/carregamento e comunicar falhas de forma clara.
+- [x] Enviar mensagens ao backend e renderizar a resposta do assistente.
+- [x] Aplicar na interface a atualização do quadro retornada pelo backend, sem exigir recarga manual.
+- [x] Preservar o fluxo normal de edição do quadro e o estado de login/logout.
 
 ### Testes e verificações
 
-- Testar envio, resposta, estado de carregamento e erros do chat com respostas de backend controladas.
-- Testar uma resposta sem alteração e outra com alteração conforme o contrato aprovado na Parte 9.
-- Confirmar que a interface reflete a atualização persistida sem recarregar a página.
-- Executar testes unitários, end-to-end, lint e build; validar também no contêiner integrado.
+- [x] Testar envio, resposta, estado de carregamento e erros do chat com respostas de backend controladas.
+- [x] Testar uma resposta sem alteração e outra com alteração conforme o contrato aprovado na Parte 9.
+- [x] Confirmar que a interface reflete a atualização persistida sem recarregar a página.
+- [x] Executar testes unitários, end-to-end, lint e build; validar também no contêiner integrado.
 
 ### Critérios de conclusão
 
-- O usuário conversa com a IA pela barra lateral e vê a resposta na interface.
-- Quando o backend retorna uma atualização válida, o quadro muda automaticamente e permanece consistente com os dados persistidos.
-- A experiência existente do quadro e o fluxo de autenticação continuam funcionais.
+- [x] O usuário conversa com a IA pela barra lateral e vê a resposta na interface.
+- [x] Quando o backend retorna uma atualização válida, o quadro muda automaticamente e permanece consistente com os dados persistidos.
+- [x] A experiência existente do quadro e o fluxo de autenticação continuam funcionais.

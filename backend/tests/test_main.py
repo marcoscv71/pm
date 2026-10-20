@@ -1,8 +1,12 @@
 import json
 import re
 import sqlite3
+from email.message import Message
+from io import BytesIO
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.board import INITIAL_BOARD
 from app.database import MVP_USER_ID, initialize_database
 from app.main import create_app
+from app.openrouter import CHECK_PROMPT, MODEL, OPENROUTER_URL
 
 
 @pytest.fixture
@@ -61,6 +66,7 @@ def test_missing_database_is_initialized_with_user_and_initial_board(
     database_path: Path,
 ) -> None:
     assert database_path.exists()
+    assert client.get("/api/board").status_code == 200
 
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
@@ -208,3 +214,131 @@ def test_missing_board_returns_not_found(
         "/api/board",
         json=INITIAL_BOARD.model_dump(mode="json"),
     ).status_code == 404
+
+
+def test_openrouter_check_sends_expected_request_and_returns_answer(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.openrouter as openrouter
+
+    api_key = "test-only-secret"
+    monkeypatch.setenv("OPENROUTER_API_KEY", api_key)
+    captured_requests: list[Request] = []
+    captured_timeouts: list[int] = []
+
+    def fake_urlopen(request: Request, timeout: int) -> BytesIO:
+        captured_requests.append(request)
+        captured_timeouts.append(timeout)
+        return BytesIO(
+            json.dumps(
+                {"choices": [{"message": {"content": "4"}}]}
+            ).encode()
+        )
+
+    monkeypatch.setattr(openrouter, "urlopen", fake_urlopen)
+    response = client.post("/api/ai/check")
+
+    request = captured_requests[0]
+    assert response.status_code == 200
+    assert response.json() == {"model": MODEL, "answer": "4"}
+    assert request.full_url == OPENROUTER_URL
+    assert request.get_method() == "POST"
+    assert request.get_header("Authorization") == f"Bearer {api_key}"
+    assert request.get_header("Content-type") == "application/json"
+    assert captured_timeouts == [30]
+    assert request.data is not None
+    assert json.loads(request.data) == {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": CHECK_PROMPT}],
+        "temperature": 0,
+    }
+    assert api_key not in response.text
+
+
+def test_openrouter_check_returns_configuration_error_without_key(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    response = client.post("/api/ai/check")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "OpenRouter is not configured. Set OPENROUTER_API_KEY."
+    }
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_detail"),
+    [
+        (
+            HTTPError(
+                OPENROUTER_URL,
+                429,
+                "Rate limited",
+                Message(),
+                BytesIO(b"private"),
+            ),
+            "OpenRouter returned HTTP 429.",
+        ),
+        (URLError("offline"), "Could not connect to OpenRouter."),
+        (TimeoutError(), "Could not connect to OpenRouter."),
+    ],
+)
+def test_openrouter_check_reports_provider_and_network_errors_safely(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_detail: str,
+) -> None:
+    import app.openrouter as openrouter
+
+    api_key = "test-only-secret"
+    monkeypatch.setenv("OPENROUTER_API_KEY", api_key)
+
+    def fail_urlopen(request: Request, timeout: int) -> BytesIO:
+        _ = request, timeout
+        raise failure
+
+    monkeypatch.setattr(openrouter, "urlopen", fail_urlopen)
+    response = client.post("/api/ai/check")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": expected_detail}
+    assert api_key not in response.text
+    assert "private" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_detail"),
+    [
+        (b"not-json", "OpenRouter returned an invalid response."),
+        (b'{"choices":[]}', "OpenRouter returned an invalid response."),
+        (
+            b'{"choices":[{"message":{"content":" "}}]}',
+            "OpenRouter returned an empty response.",
+        ),
+    ],
+)
+def test_openrouter_check_rejects_invalid_provider_responses(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+    expected_detail: str,
+) -> None:
+    import app.openrouter as openrouter
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-only-secret")
+
+    def return_invalid_response(request: Request, timeout: int) -> BytesIO:
+        _ = request, timeout
+        return BytesIO(body)
+
+    monkeypatch.setattr(openrouter, "urlopen", return_invalid_response)
+
+    response = client.post("/api/ai/check")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": expected_detail}
