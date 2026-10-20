@@ -226,6 +226,30 @@ describe("KanbanBoard", () => {
     expect(screen.queryByText("O quadro foi atualizado.")).not.toBeInTheDocument();
   });
 
+  it("sends the chat message with Enter and adds a line break with Shift+Enter", async () => {
+    render(<KanbanBoard onLogout={onLogout} />);
+    await screen.findAllByTestId(/column-/i);
+    const user = userEvent.setup();
+    const input = screen.getByLabelText("Sua mensagem");
+    await user.type(input, "Primeira linha{Shift>}{Enter}{/Shift}Segunda linha");
+
+    expect(input).toHaveValue("Primeira linha\nSegunda linha");
+
+    await user.type(input, "{Enter}");
+
+    expect(await screen.findByText("Tudo certo.")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      "/api/ai/chat",
+      expect.objectContaining({
+        body: JSON.stringify({
+          message: "Primeira linha\nSegunda linha",
+          history: [],
+        }),
+      })
+    );
+  });
+
   it("reports chat failures and keeps the message available for retry", async () => {
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       if (String(input) === "/api/ai/chat") {
