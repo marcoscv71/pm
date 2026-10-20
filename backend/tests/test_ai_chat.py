@@ -157,6 +157,7 @@ def test_chat_without_operations_returns_reply_and_does_not_write_board(
         '{"reply":"Ok","operations":[{"type":"unknown"}]}',
         '{"reply":"Ok","operations":[],"unexpected":true}',
         '{"reply":" ","operations":[]}',
+        json.dumps({"reply": "x" * 4001, "operations": []}),
     ],
 )
 def test_chat_rejects_invalid_structured_output_without_persisting(

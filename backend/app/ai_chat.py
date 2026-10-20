@@ -109,7 +109,7 @@ ChatOperation = Annotated[
 class AIChatResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    reply: str = Field(min_length=1)
+    reply: str = Field(min_length=1, max_length=MAX_MESSAGE_LENGTH)
     operations: list[ChatOperation] = Field(default_factory=list)
 
     @field_validator("reply")
