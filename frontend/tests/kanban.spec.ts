@@ -119,6 +119,7 @@ test("renames a column", async ({ page }) => {
 
   await title.fill("A fazer");
   await expect(title).toHaveValue("A fazer");
+  await title.press("Enter");
   await expect(page.getByText("Alterações salvas.")).toBeVisible();
   expect(api.getBoard().columns[0].title).toBe("A fazer");
 
@@ -252,6 +253,7 @@ test("reports save failures and reverts the unsaved change", async ({ page }) =>
     .getByRole("textbox", { name: "Título da coluna" });
 
   await title.fill("Não persistido");
+  await title.press("Enter");
   await expect(page.getByText(/Não foi possível salvar as alterações/))
     .toBeVisible();
 

@@ -9,6 +9,8 @@ const jsonResponse = (body: unknown, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+const putRequests = () =>
+  vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT");
 
 describe("KanbanBoard", () => {
   const onLogout = vi.fn();
@@ -55,11 +57,30 @@ describe("KanbanBoard", () => {
     await userEvent.clear(input);
     await userEvent.type(input, "Novo nome");
     expect(input).toHaveValue("Novo nome");
+    expect(putRequests()).toHaveLength(0);
+
+    await userEvent.type(input, "{Enter}");
+
     expect(await screen.findByText("Alterações salvas.")).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/board",
-      expect.objectContaining({ method: "PUT" })
+    expect(putRequests()).toHaveLength(1);
+    expect(JSON.parse(String(putRequests()[0][1]?.body)).columns[0].title).toBe(
+      "Novo nome"
     );
+  });
+
+  it("does not save a blank or unchanged column title", async () => {
+    render(<KanbanBoard onLogout={onLogout} />);
+    const input = within(
+      await screen.findByTestId("column-col-backlog")
+    ).getByLabelText("Título da coluna");
+
+    await userEvent.clear(input);
+    await userEvent.tab();
+    expect(input).toHaveValue("Pendências");
+
+    await userEvent.click(input);
+    await userEvent.tab();
+    expect(putRequests()).toHaveLength(0);
   });
 
   it("loads cards from the API and saves card additions and removals", async () => {
